@@ -1,0 +1,27 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Admin · Meow Club</title><link rel="stylesheet" href="style.css"></head><body><div class="wrap">
+<div id="login" class="card lav" style="margin-top:40px"><h1>🐱 Admin Login</h1><input id="pw" type="password" placeholder="Password admin"><button id="go">Masuk</button><p id="e" class="err"></p></div>
+<div id="app" class="hidden"><div class="row sp"><h1 style="font-size:30px">Dashboard Admin</h1><button class="sm p" onclick="sessionStorage.removeItem('ak');location.reload()">keluar</button></div>
+<div class="card"><div class="row"><input class="grow" id="q" placeholder="Cari nama / member ID…"><button id="new" class="g">+ customer</button></div><div id="list"></div></div><div id="det"></div></div></div>
+<script src="app.js"></script><script>
+const A=(a,b)=>api(a,b,'ak'),rnd=()=>Array.from(crypto.getRandomValues(new Uint8Array(8)),x=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[x%32]).join('');let cur=null;
+const fail=e=>{if(e.status===401){sessionStorage.removeItem('ak');location.reload()}else alert(e.message)};
+$('#go').onclick=async()=>{try{const r=await api('admin_login',{password:$('#pw').value},null);sessionStorage.setItem('ak',r.token);boot()}catch(e){$('#e').textContent=e.message}};
+function boot(){if(!sessionStorage.getItem('ak'))return;$('#login').classList.add('hidden');$('#app').classList.remove('hidden');list()}
+async function list(){try{const{list:l}=await A('customers',{q:$('#q').value});$('#list').innerHTML=l.map(c=>`<div class="row sp" style="padding:8px 0;border-top:1px dashed var(--line)"><span><b>${esc(c.name)}</b> <span class="muted">${esc(c.member_id)} · ${c.stamps}/10🐾</span></span><button class="sm" onclick="open_('${c.id}')">buka</button></div>`).join('')||'<p class="muted">Belum ada customer.</p>'}catch(e){fail(e)}}
+$('#q').oninput=()=>{clearTimeout(window.t);window.t=setTimeout(list,300)};
+$('#new').onclick=()=>{cur=null;form()};
+async function open_(id){try{cur=await A('customer',{id});form();scrollTo(0,$('#det').offsetTop)}catch(e){fail(e)}}
+async function run(a,b){try{await A(a,b);await list();if(cur)open_(cur.customer.id)}catch(e){fail(e)}}
+function form(){const d=cur,c=d?.customer,sel=(arr,v,fn)=>`<select onchange="${fn}">${arr.map(s=>`<option ${s===v?'selected':''}>${s}</option>`).join('')}</select>`;
+$('#det').innerHTML=`<h2>${c?esc(c.name):'Customer baru'}</h2><div class="card pink"><input id="fn" placeholder="Nama" value="${esc(c?.name||'')}"><input id="fm" placeholder="Member ID unik" value="${esc(c?.member_id||'')}"><div class="row"><input class="grow" id="fc" placeholder="${c?'Kode baru (kosongkan = tetap)':'Kode akses'}"><button class="sm" onclick="fc.value=rnd()">acak</button></div><button onclick="saveC()">simpan</button><p class="muted">Kode disimpan sebagai hash — catat & berikan ke customer saat dibuat.</p></div>`+(d?`
+<div class="card but"><b>Stamp: ${c.stamps}/10</b><div class="row"><input class="grow" id="sr" placeholder="Alasan koreksi"><button class="sm" onclick="adj(1)">+1</button><button class="sm" onclick="adj(-1)">−1</button></div></div>
+<h2>Tambah nota</h2><div class="card"><input id="op" placeholder="Produk"><input id="opl" placeholder="Paket (mis. Sharing · 1 Bulan)"><div class="row"><input class="grow" id="oq" type="number" value="1" min="1"><input class="grow" id="opr" type="number" placeholder="Harga satuan"><input class="grow" id="od" type="number" placeholder="Garansi (hari)"></div><button class="g" onclick="addO()">buat nota</button></div>
+<h2>Nota</h2>${d.orders.map(o=>`<div class="card nota"><b>${esc(o.nota_no)}</b> · ${esc(o.product)} ×${o.qty} · ${rp(o.price*o.qty)}<div class="row">${o.stamped?'<span class="tag">🐾 selesai & stamped</span>':sel(['diproses','selesai','batal'],o.status,`run('order_status',{id:'${o.id}',status:this.value})`)}</div></div>`).join('')}
+<h2>Garansi & klaim</h2>${d.warranties.map(w=>`<div class="card"><b>${esc(w.product)}</b> <span class="muted">${D(w.start_date)} → ${D(w.end_date)}</span>${d.claims.filter(k=>k.warranty_id===w.id).map(k=>`<div class="muted" style="margin-top:6px">“${esc(k.message)}” · ${D(k.created_at)}${sel(['baru','diproses','selesai','ditolak'],k.status,`run('claim_status',{id:'${k.id}',status:this.value})`)}</div>`).join('')}</div>`).join('')}
+<h2>Voucher</h2>${d.vouchers.map(v=>`<div class="card row sp"><span class="code">${esc(v.code)}</span><span class="muted">s/d ${D(v.expires_at)}</span>${v.used_at?'<span class="tag x">terpakai</span>':`<button class="sm" onclick="run('voucher_use',{id:'${v.id}'})">tandai terpakai</button>`}</div>`).join('')}
+<h2>Riwayat stamp</h2><div class="card">${d.logs.map(l=>`<div class="muted">${D(l.created_at)} · <b>${l.delta>0?'+':''}${l.delta}</b> · ${esc(l.reason)}</div>`).join('')||'-'}</div>`:'')}
+async function saveC(){const code=fc.value;try{await A('customer_save',{id:cur?.customer.id,name:fn.value,member_id:fm.value,code});if(code)alert('Kode akses: '+code.toUpperCase()+'\nCatat & kirim ke customer.');await list();if(cur)open_(cur.customer.id);else $('#det').innerHTML=''}catch(e){fail(e)}}
+const adj=d=>run('stamp_adjust',{customer_id:cur.customer.id,delta:d,reason:sr.value});
+const addO=()=>run('order_save',{customer_id:cur.customer.id,product:op.value,plan:opl.value,qty:oq.value,price:opr.value,days:od.value});
+boot();
+</script></body></html>
